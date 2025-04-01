@@ -5,36 +5,41 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.temporal.ChronoField;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAccessor;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 
 public class TipsForm implements ActionListener {
+    // Screen dimensions
     private final Dimension screenResolution = Toolkit.getDefaultToolkit().getScreenSize();
     private final double APPLICATION_SIZE_FRACTION = 0.8;
 
+    // Main application + layout
     private final JFrame frame;
     private JPanel contentPane;
     private final GridBagLayout layout;
     private final GridBagConstraints gbc;
 
+    // Part of topPanel
     private JLabel tipsLabel;
     private JButton tipsSetButton;
     private Float tips = 0.00f;
 
-    private JLabel acceptedFormatLabel;
+    // Centre panel
     private final JScrollPane scrollPane;
+    private JLabel acceptedFormatLabel;
     private DefaultTableModel employeeTableModel;
     private JTable employeeTable;
-    private JButton addEmployeeButton;
 
+    // Bottom panel
+    private JButton addEmployeeButton;
     private JButton calculateDividedTips;
     private JButton testButton;
 
@@ -53,7 +58,7 @@ public class TipsForm implements ActionListener {
      * @param gridWidth A specified gridWidth
      * @param gridHeight A specified gridHeight
      */
-    public void addWithConstraints(Component component, Container container, GridBagLayout layout, GridBagConstraints gbc, int gridX, int gridY, int gridWidth, int gridHeight) {
+    private void addWithConstraints(Component component, Container container, GridBagLayout layout, GridBagConstraints gbc, int gridX, int gridY, int gridWidth, int gridHeight) {
         gbc.gridx = gridX;
         gbc.gridy = gridY;
 
@@ -68,14 +73,16 @@ public class TipsForm implements ActionListener {
      * Creates a table with 13 columns and 0 rows
      * New rows are added to the table via addEmployeeButton
      */
-    public void makeTable() {
+    private void makeTable() {
         screenResolution.width = (int) (screenResolution.width * APPLICATION_SIZE_FRACTION);
         screenResolution.height = (int) (screenResolution.height * APPLICATION_SIZE_FRACTION);
 
         employeeTableModel = new DefaultTableModel();
 
-        // Add column for employee name and each month
-        // Each column represents the number of hours worked in that month
+        /*
+        * Add column for employee name and each month
+        * Each column represents the number of hours worked in that month
+        */
         String[] columnNames = {"Name", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "Tip Share"};
         for (String column : columnNames) {
             employeeTableModel.addColumn(column);
@@ -85,33 +92,66 @@ public class TipsForm implements ActionListener {
         employeeTable.setPreferredScrollableViewportSize(screenResolution);
         employeeTable.setFillsViewportHeight(true);
 
-        // Create a listener for the table, converting input values into hours and minutes
-        employeeTableModel.addTableModelListener(e -> {
-            if (employeeTable.isEditing()) {
-                int currentRow = employeeTable.getSelectedRow();
-                int currentColumn = employeeTable.getSelectedColumn();
-                Object value = employeeTable.getValueAt(currentRow, currentColumn);
+        // Create a listener for the table to prevent incorrect formats
+        Action checkCellFormat = new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                TableCellListener tcl = (TableCellListener) e.getSource();
 
-                // Leave name fields alone
-                if (employeeTable.getSelectedColumn() != 0 && employeeTable.getSelectedColumn() != 13) {
-                    // Check if input value follows format
-                    if (String.valueOf(value).matches("\\d+[hH]\\s\\d{0,2}[mM]")) {
-                        // Get the value of the input work hours as a float so we can properly turn it into minutes and hours as Duration
-                        Duration newCellValue = getDuration(value);
-                        System.out.println(newCellValue);   // TODO: make this usable in the table
+                JTable table = tcl.getTable();
+                int row = tcl.getRow();
+                int col = tcl.getColumn();
+                Object oldValue = tcl.getOldValue();
+                Object newValue = tcl.getNewValue();
 
-                        //employeeTable.setValueAt(newCellValue, currentRow, currentColumn);
-                    } else {
-                        String msg = "New value must match the accepted format! e.g. 128 hours and 31 minutes = 128h 31m";
-                        JOptionPane.showMessageDialog(null, msg);
+                // Ignore "Name" and "Tip share" columns
+                if (col != 0 && col != 13) {
+                    if (!(String.valueOf(newValue).matches("\\d+[hH]\\s\\d{0,2}[mM]"))) {
+                        // Alert if value doesn't match accepted format
+                        JOptionPane.showMessageDialog(
+                                null,
+                                "New value must match the accepted format! e.g. 128 hours and 31 minutes = 128h 31m",
+                                "Format error",
+                                JOptionPane.ERROR_MESSAGE);
+                        // Set cell value back to what it was before edit
+                        table.setValueAt(oldValue, row, col);
                     }
                 }
             }
-        });
+        };
+
+        TableCellListener listener = new TableCellListener(employeeTable, checkCellFormat);
+        employeeTableModel.addTableModelListener(listener.getTable());
     }
 
     /**
-     * Get the value of a cell in employeeTable as a Duration
+     * Asks the user for the employee's name, then creates a new row
+     * in the table with the input as the value for the first column.
+     * Takes no arguments: the method handles the input string.
+     */
+    private void newEmployee() {
+        // Ask for name of new addition
+        String employeeName = JOptionPane.showInputDialog("Enter employee name:");
+        if (employeeName != null && !(employeeName.isEmpty())) {
+            Employee employee = new Employee(employeeName);
+
+            // Add a row with the provided name as the input for the first column; remaining cells in that row set to 0h 00m
+            Object[] newRow = new Object[]{
+                    employee.getName(), "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "£0.00"
+            };
+            employeeTableModel.addRow(newRow);
+        } else if (employeeName != null) {
+            // Alert if the name field is empty
+            JOptionPane.showMessageDialog(
+                    null,
+                    "Employee name must not be empty!",
+                    "Field error",
+                    JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /**
+     * Get the value of a cell in employeeTable as a Duration.
      * @param value The cell's value
      * @return The value as a Duration
      */
@@ -137,10 +177,11 @@ public class TipsForm implements ActionListener {
      * Converts said months into integers for use in calculateTips().
      */
     public void openMonthSelectDialog() {
-        String[] months = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};;
+        String[] months = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
+
         // Dropdown menus for months; set default to January to avoid NullPointerException
-        JComboBox fromMonthField = new JComboBox(months);
-        JComboBox toMonthField = new JComboBox(months);
+        JComboBox<String> fromMonthField = new JComboBox<>(months);
+        JComboBox<String> toMonthField = new JComboBox<>(months);
         fromMonthField.setSelectedItem(months[0]);
         toMonthField.setSelectedItem(months[0]);
 
@@ -178,26 +219,31 @@ public class TipsForm implements ActionListener {
     }
 
     /**
-     * TODO: finish this method
      * Populate the 'Tips share' column of each row with the amount that person is owed of the available tips.
      * @param startingMonthIndex The index of the month to start calculating from
      * @param endingMonthIndex The index of the month to end calculating at
      */
     public void calculateTips(int startingMonthIndex, int endingMonthIndex) {
-        // TODO: get sum total of all hours in specified columns, then divide by tips to get ratio
-        // Then multiply by a specific person's hours
-        Map<String, Duration> peopleTotalHours = new HashMap<>();
+        // A list of all employees and their total time worked
+        Map<String, Duration> individualTotalWorked = Collections.synchronizedMap(new LinkedHashMap<>());
 
         // Go through each employee, then record their name and a running total of their hours
         for (int row = 0; row < employeeTable.getRowCount(); row++) {
             String employeeName = String.valueOf(employeeTable.getValueAt(row, 0));
             Duration currentTotal = Duration.ofHours(0L);
 
-            // Total hours in the given month range
-            if (startingMonthIndex < endingMonthIndex) {
-                // e.g. March (3) to September (9)
-                // TODO: fix this method. With January - March as selections, causes StringIndexOutOfBounds
-                for (int col = startingMonthIndex; col < endingMonthIndex; col++) {
+            // Gather the total of hours in the given month range
+            if (startingMonthIndex == endingMonthIndex) { /* e.g. January to January, that is, only get one month's hours */
+                String currentCell = String.valueOf(employeeTable.getValueAt(row, startingMonthIndex));
+                Duration currentHours;
+                if (currentCell.matches("\\d+[hH]\\s\\d{0,2}[mM]")) {
+                    currentHours = getDuration(employeeTable.getValueAt(row, startingMonthIndex));
+                } else {
+                    currentHours = getDuration(0);
+                }
+                currentTotal = currentTotal.plus(currentHours);
+            } else if (startingMonthIndex < endingMonthIndex) { /* e.g. March (3) to September (9) */
+                for (int col = startingMonthIndex; col <= endingMonthIndex; col++) {
                     String currentCell = String.valueOf(employeeTable.getValueAt(row, col));
                     Duration currentHours;
                     if (currentCell.matches("\\d+[hH]\\s\\d{0,2}[mM]")) {
@@ -207,24 +253,87 @@ public class TipsForm implements ActionListener {
                     }
                     currentTotal = currentTotal.plus(currentHours);
                 }
-            } else {
-                // TODO: solve this
-                // e.g. October (10) to February (2)
-                int monthDifference = (int) ChronoUnit.MONTHS.between(
-                    YearMonth.from(LocalDate.of(2025, endingMonthIndex, 1)),
-                    YearMonth.from(LocalDate.of(2025, startingMonthIndex, 1))
-                );
-                // 'Roll over' the array, somehow?
-                for (int col = 0; col < monthDifference % 12; col++) {
+            } else { /* e.g. October (10) to February (2) */
+                // Modulo operator 'wraps around' the array
+                for (int col = startingMonthIndex; col != endingMonthIndex + 1; col = (col + 1) % 12) {
                     Duration currentCell = getDuration(employeeTable.getValueAt(row, col));
                     currentTotal = currentTotal.plus(currentCell);
                 }
             }
 
             // Add this person's total hours to hashmap
-            peopleTotalHours.put(employeeName, currentTotal);
+            individualTotalWorked.put(employeeName, currentTotal);
         }
-        System.out.println(peopleTotalHours);
+
+        // Sum the time worked of all employees, then divide by the tips available to get a ratio
+        Duration totalWorkedHours = Duration.ofHours(0);
+        for (Map.Entry<String, Duration> employee : individualTotalWorked.entrySet()) {
+            totalWorkedHours = totalWorkedHours.plus(employee.getValue());
+        }
+        float totalWorkedHoursFloat = (float) totalWorkedHours.toMinutes() / 60;
+        float tipsRatio = tips / totalWorkedHoursFloat;
+
+        // Update "Tips share" column for each employee with their hours multiplied by the ratio
+        BigDecimal share;
+        // Optionally recalculate total tip shares to ensure it matches tipsAvailable
+        //BigDecimal recalculatedTips = BigDecimal.valueOf(0);
+        // Using a LinkedHashMap, use mapIndex as the row as it will follow the map's insertion order.
+        int mapIndex = 0;
+        for (String key : individualTotalWorked.keySet()) {
+            Duration d = individualTotalWorked.get(key);
+            float time = (float) d.toMinutes() / 60;
+            share = BigDecimal.valueOf(time * tipsRatio)
+                    .round(new MathContext(4, RoundingMode.HALF_EVEN));
+
+            //recalculatedTips = recalculatedTips.add(share);
+
+            Object shareToShow = String.format("£%.2f", share);
+            employeeTable.setValueAt(shareToShow, mapIndex, 13);
+
+            mapIndex += 1;
+        }
+
+        //System.out.println(recalculatedTips);
+    }
+
+    /**
+     * Create 10 test employees.
+     * Names follow the pattern "Test [number]".
+     * A random number of months are given a random time value.
+     */
+    private void seedTestData() {
+        for (int i = 0; i < 10; i++) {
+            String testName = "Test " + (i+1);
+
+            Random randNum = new Random();
+            // Result should range between 1 and 12 (nextInt lower bound starts at 0 inclusive, upper bound is exclusive).
+            int randomMonth = randNum.nextInt(12) + 1;
+            // Following variable is redundant but being kept for clarity
+            int numColumnsToChange = randomMonth;
+            // Use a set to prevent duplicate months from appearing
+            Set<Integer> affectedMonths = new HashSet<>();
+            while (affectedMonths.size() < numColumnsToChange) {
+                affectedMonths.add(randNum.nextInt(12) + 1);
+            }
+
+            Object[] testRow = new Object[]{
+                    testName, "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "£0.00"
+            };
+
+            for (Integer monthIndex : affectedMonths) {
+                int randomHour = randNum.nextInt(11);
+                int randomMin1 = randNum.nextInt(6);
+                int randomMin2 = randNum.nextInt(10);
+                Object timeValue = String.format("%dh %d%dm", randomHour, randomMin1, randomMin2);
+
+                testRow[monthIndex] = timeValue;
+            }
+            employeeTableModel.addRow(testRow);
+        }
+
+        tips = Float.valueOf(JOptionPane.showInputDialog("Tips available:"));
+        tipsLabel.setText(String.format("Tips available: %s", tips));
+        openMonthSelectDialog();
     }
 
     public TipsForm() {
@@ -317,26 +426,13 @@ public class TipsForm implements ActionListener {
                 tipsLabel.setText(String.format("Tips available: %s", this.tips));
                 break;
             case "ADD_NEW_EMPLOYEE":
-                // Ask for name of new addition
-                String employeeName = JOptionPane.showInputDialog("Enter employee name:");
-                Employee employee = new Employee(employeeName);
-                // Add a row with the provided name as the input for the first column; remaining cells in that row set to 0
-                Object[] newRow = new Object[]{
-                        employee.getName(), "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m"
-                };
-                employeeTableModel.addRow(newRow);
+                newEmployee();
                 break;
             case "CALCULATE_TIPS":
                 openMonthSelectDialog();
                 break;
             case "TEST_BTN":
-                // Currently, prints content of the first row as an array
-                ArrayList<Object> testRow = new ArrayList<Object>();
-                for (int col = 1; col < employeeTable.getColumnCount(); col++) {
-                    Object colData = employeeTableModel.getValueAt(0, col);
-                    testRow.add(colData);
-                }
-                System.out.println(testRow);
+                seedTestData();
                 break;
             default:
                 System.out.println("Unknown command");

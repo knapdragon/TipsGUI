@@ -7,12 +7,12 @@ public class Employee {
      * A list representing the 12 months.
      * Each element in the array is the number of hours the employee has worked.
      */
-    private final ArrayList<Float> hoursWorkedPerMonth;
+    private final ArrayList<String> hoursWorkedPerMonth;
     private int monthNumber;
 
     public Employee(String nameInput) {
         this.name = nameInput;
-        hoursWorkedPerMonth = new ArrayList<Float>(12);
+        hoursWorkedPerMonth = new ArrayList<String>(12);
     }
 
     public String getName() {
@@ -27,7 +27,7 @@ public class Employee {
      * Gets the list of hours worked in each month of the year.
      * @return The list.
      */
-    public ArrayList<?> getHoursWorkedPerMonth() {
+    public ArrayList<String> getHoursWorkedPerMonth() {
         return hoursWorkedPerMonth;
     }
 
@@ -35,17 +35,16 @@ public class Employee {
      * Get the hours worked in a specific month.
      * @return The hours as a float.
      */
-    public float getMonthlyHours(int monthNumber) {
+    public String getMonthlyHours(int monthNumber) {
         return hoursWorkedPerMonth.get(monthNumber - 1);
     }
 
     /**
      * Set the hours worked by an employee for a given month.
-     * @param hoursWorkedPerMonth The employee's list of hours per month.
      * @param monthNumber The month to set the hours worked.
-     * @param hours The hours worked.
+     * @param hours The hours worked, in the following format: "0h 00m".
      */
-    public void setMonthlyHours(ArrayList<?> hoursWorkedPerMonth, int monthNumber, Float hours) {
+    public void setMonthlyHours(int monthNumber, String hours) {
         this.hoursWorkedPerMonth.set(monthNumber - 1, hours);
     }
 
