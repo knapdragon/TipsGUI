@@ -1,10 +1,17 @@
 package TipsGUI;
 
+import com.opencsv.CSVWriter;
+import com.opencsv.bean.CsvBindByName;
+import com.opencsv.bean.CsvToBeanBuilder;
+
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
@@ -12,9 +19,9 @@ import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.temporal.ChronoField;
-import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAccessor;
 import java.util.*;
+import java.util.List;
 
 public class TipsForm implements ActionListener {
     // Screen dimensions
@@ -31,10 +38,11 @@ public class TipsForm implements ActionListener {
     private JLabel tipsLabel;
     private JButton tipsSetButton;
     private Float tips = 0.00f;
+    private JButton importReplacingButton;
+    private JButton importAddingButton;
 
     // Centre panel
     private final JScrollPane scrollPane;
-    private JLabel acceptedFormatLabel;
     private DefaultTableModel employeeTableModel;
     private JTable employeeTable;
 
@@ -42,31 +50,56 @@ public class TipsForm implements ActionListener {
     private JButton addEmployeeButton;
     private JButton calculateDividedTips;
     private JButton testButton;
+    private JButton exportButton;
+
+    public static class CsvEmployee {
+        @CsvBindByName(column = "Name")
+        private String name;
+
+        @CsvBindByName(column = "January")
+        private String januaryDuration;
+
+        @CsvBindByName(column = "February")
+        private String februaryDuration;
+
+        @CsvBindByName(column = "March")
+        private String marchDuration;
+
+        @CsvBindByName(column = "April")
+        private String aprilDuration;
+
+        @CsvBindByName(column = "May")
+        private String mayDuration;
+
+        @CsvBindByName(column = "June")
+        private String juneDuration;
+
+        @CsvBindByName(column = "July")
+        private String julyDuration;
+
+        @CsvBindByName(column = "August")
+        private String augustDuration;
+
+        @CsvBindByName(column = "September")
+        private String septemberDuration;
+
+        @CsvBindByName(column = "October")
+        private String octoberDuration;
+
+        @CsvBindByName(column = "November")
+        private String novemberDuration;
+
+        @CsvBindByName(column = "December")
+        private String decemberDuration;
+
+        @CsvBindByName(column = "Tip Share")
+        private String tipShare;
+
+
+    }
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(TipsForm::new);
-    }
-
-    /**
-     * Adds a new component with grid bag constraints.
-     * @param component The component to add
-     * @param container What is being added to
-     * @param layout A specified GridBagLayout
-     * @param gbc Any pre-existing GridBagConstraints
-     * @param gridX A specified gridX
-     * @param gridY A specified gridY
-     * @param gridWidth A specified gridWidth
-     * @param gridHeight A specified gridHeight
-     */
-    private void addWithConstraints(Component component, Container container, GridBagLayout layout, GridBagConstraints gbc, int gridX, int gridY, int gridWidth, int gridHeight) {
-        gbc.gridx = gridX;
-        gbc.gridy = gridY;
-
-        gbc.gridwidth = gridWidth;
-        gbc.gridheight = gridHeight;
-
-        layout.setConstraints(component, gbc);
-        container.add(component);
     }
 
     /**
@@ -183,7 +216,7 @@ public class TipsForm implements ActionListener {
         JComboBox<String> fromMonthField = new JComboBox<>(months);
         JComboBox<String> toMonthField = new JComboBox<>(months);
         fromMonthField.setSelectedItem(months[0]);
-        toMonthField.setSelectedItem(months[0]);
+        toMonthField.setSelectedItem(months[11]);
 
         JPanel calcPanel = new JPanel();
         calcPanel.add(new JLabel("From:"));
@@ -214,16 +247,16 @@ public class TipsForm implements ActionListener {
             TemporalAccessor endAccessor = parser.parse(endingMonth);
             int endingMonthIndex = endAccessor.get(ChronoField.MONTH_OF_YEAR);
 
-            calculateTips(startingMonthIndex, endingMonthIndex);
+            calculateHours(startingMonthIndex, endingMonthIndex);
         }
     }
 
     /**
-     * Populate the 'Tips share' column of each row with the amount that person is owed of the available tips.
+     * Calculate the total and individual hours of each employee, for use in calculating their share of tips.
      * @param startingMonthIndex The index of the month to start calculating from
      * @param endingMonthIndex The index of the month to end calculating at
      */
-    public void calculateTips(int startingMonthIndex, int endingMonthIndex) {
+    public void calculateHours(int startingMonthIndex, int endingMonthIndex) {
         // A list of all employees and their total time worked
         Map<String, Duration> individualTotalWorked = Collections.synchronizedMap(new LinkedHashMap<>());
 
@@ -265,6 +298,14 @@ public class TipsForm implements ActionListener {
             individualTotalWorked.put(employeeName, currentTotal);
         }
 
+        calculateTips(individualTotalWorked);
+    }
+
+    /**
+     * Populate the 'Tips share' column of each row with the amount that person is owed of the available tips.
+     * @param individualTotalWorked The total duration worked for each employee.
+     */
+    private void calculateTips(Map<String, Duration> individualTotalWorked) {
         // Sum the time worked of all employees, then divide by the tips available to get a ratio
         Duration totalWorkedHours = Duration.ofHours(0);
         for (Map.Entry<String, Duration> employee : individualTotalWorked.entrySet()) {
@@ -300,40 +341,197 @@ public class TipsForm implements ActionListener {
      * Create 10 test employees.
      * Names follow the pattern "Test [number]".
      * A random number of months are given a random time value.
+     * Also automatically prompts tips input and month selection, then calculates tips.
      */
     private void seedTestData() {
-        for (int i = 0; i < 10; i++) {
-            String testName = "Test " + (i+1);
+        Object inputValue = JOptionPane.showInputDialog("Tips available:");
+        if (inputValue == null) {
+            // Alert if tips input cancelled
+            JOptionPane.showMessageDialog(
+                    null,
+                    "Tips field was not filled. Cancelling test data creation.",
+                    "Field error",
+                    JOptionPane.ERROR_MESSAGE);
+        } else {
+            tips = Float.valueOf(inputValue.toString());
+            tipsLabel.setText(String.format("Tips available: %s", tips));
 
-            Random randNum = new Random();
-            // Result should range between 1 and 12 (nextInt lower bound starts at 0 inclusive, upper bound is exclusive).
-            int randomMonth = randNum.nextInt(12) + 1;
-            // Following variable is redundant but being kept for clarity
-            int numColumnsToChange = randomMonth;
-            // Use a set to prevent duplicate months from appearing
-            Set<Integer> affectedMonths = new HashSet<>();
-            while (affectedMonths.size() < numColumnsToChange) {
-                affectedMonths.add(randNum.nextInt(12) + 1);
+            for (int i = 0; i < 10; i++) {
+                String testName = "Test " + (i+1);
+
+                Random randNum = new Random();
+                // Result should range between 1 and 12 (nextInt lower bound starts at 0 inclusive, upper bound is exclusive).
+                int randomMonth = randNum.nextInt(12) + 1;
+                // Following variable is redundant but being kept for clarity
+                int numColumnsToChange = randomMonth;
+                // Use a set to prevent duplicate months from appearing
+                Set<Integer> affectedMonths = new HashSet<>();
+                while (affectedMonths.size() < numColumnsToChange) {
+                    affectedMonths.add(randNum.nextInt(12) + 1);
+                }
+
+                Object[] testRow = new Object[]{
+                        testName, "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "£0.00"
+                };
+
+                for (Integer monthIndex : affectedMonths) {
+                    int randomHour = randNum.nextInt(11);
+                    int randomMin1 = randNum.nextInt(6);
+                    int randomMin2 = randNum.nextInt(10);
+                    Object timeValue = String.format("%dh %d%dm", randomHour, randomMin1, randomMin2);
+
+                    testRow[monthIndex] = timeValue;
+                }
+                employeeTableModel.addRow(testRow);
             }
 
-            Object[] testRow = new Object[]{
-                    testName, "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "0h 00m", "£0.00"
-            };
-
-            for (Integer monthIndex : affectedMonths) {
-                int randomHour = randNum.nextInt(11);
-                int randomMin1 = randNum.nextInt(6);
-                int randomMin2 = randNum.nextInt(10);
-                Object timeValue = String.format("%dh %d%dm", randomHour, randomMin1, randomMin2);
-
-                testRow[monthIndex] = timeValue;
-            }
-            employeeTableModel.addRow(testRow);
+            openMonthSelectDialog();
         }
+    }
 
-        tips = Float.valueOf(JOptionPane.showInputDialog("Tips available:"));
-        tipsLabel.setText(String.format("Tips available: %s", tips));
-        openMonthSelectDialog();
+    /***
+     * Add all recognised employees from an imported CSV file to the table.
+     * @param listOfNewEmployees The beans list.
+     */
+    private void addCsvEmployeesToTable(List<CsvEmployee> listOfNewEmployees) {
+        for (CsvEmployee csvEmp : listOfNewEmployees) {
+            Object[] newRow = new Object[]{
+                csvEmp.name,
+                csvEmp.januaryDuration,
+                csvEmp.februaryDuration,
+                csvEmp.marchDuration,
+                csvEmp.aprilDuration,
+                csvEmp.mayDuration,
+                csvEmp.juneDuration,
+                csvEmp.julyDuration,
+                csvEmp.augustDuration,
+                csvEmp.septemberDuration,
+                csvEmp.octoberDuration,
+                csvEmp.novemberDuration,
+                csvEmp.decemberDuration,
+                csvEmp.tipShare
+            };
+            employeeTableModel.addRow(newRow);
+        }
+    }
+
+    /***
+     * Import a CSV file into the table.
+     * @param replacesTable True if the import resets the table and sets it to the file contents. False if it adds onto the existing table.
+     */
+    private void importFile(boolean replacesTable) {
+        JFileChooser chooser = new JFileChooser();
+
+        if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
+            File file = chooser.getSelectedFile();
+            String fileName = file.getName();
+            String fileType = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
+
+            if (fileType.equals("csv")) {
+                try {
+                    List<CsvEmployee> beans = new CsvToBeanBuilder(new FileReader(fileName))
+                            .withType(CsvEmployee.class).build().parse();
+                    if (replacesTable) {
+                        int rowCount = employeeTableModel.getRowCount();
+                        for (int i = 0; i < rowCount; i++) {
+                            employeeTableModel.removeRow(0);
+                        }
+                    }
+                    addCsvEmployeesToTable(beans);
+
+                } catch (Exception e) {
+                    // File alert
+                    JOptionPane.showMessageDialog(
+                            null,
+                            "No such file exists",
+                            "File error",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        }
+    }
+
+    /**
+     * Exports the table as a CSV file.
+     */
+    private void exportFile() {
+        JFileChooser chooser = new JFileChooser();
+        int returnValue = chooser.showSaveDialog(frame);
+
+        String fileName;
+        if (returnValue == JFileChooser.APPROVE_OPTION) {
+            fileName = chooser.getSelectedFile().getName();
+
+            try (CSVWriter writer = new CSVWriter(new FileWriter(fileName))) {
+                // As in makeTable()
+                String[] headers = {"Name", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "Tip Share"};
+                writer.writeNext(headers);
+
+                String[] line = new String[14];
+                for (int row = 0; row < employeeTableModel.getRowCount(); row++) {
+                    for (int col = 0; col < employeeTableModel.getColumnCount(); col++) {
+                        line[col] = String.valueOf(employeeTable.getValueAt(row, col));
+                    }
+
+                    writer.writeNext(line);
+                }
+            } catch (Exception e) {
+                JOptionPane.showMessageDialog(
+                        null,
+                        "No such file exists",
+                        "File error",
+                        JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    /**
+     * Adds a new component with grid bag constraints.
+     * @param component The component to add
+     * @param container What is being added to
+     * @param layout A specified GridBagLayout
+     * @param gbc Any pre-existing GridBagConstraints
+     * @param gridX The grid column
+     * @param gridY The grid row
+     * @param gridWidth The number of columns the cell uses
+     * @param gridHeight The number of rows the cell uses
+     */
+    private void addWithConstraints(Component component, Container container, GridBagLayout layout, GridBagConstraints gbc,
+                                    int gridX, int gridY, int gridWidth, int gridHeight) {
+        gbc.gridx = gridX;
+        gbc.gridy = gridY;
+
+        gbc.gridwidth = gridWidth;
+        gbc.gridheight = gridHeight;
+
+        layout.setConstraints(component, gbc);
+        container.add(component);
+    }
+
+    /**
+     * Adds a new component with grid bag constraints including insets for external padding.
+     * @param component The component to add
+     * @param container What is being added to
+     * @param layout A specified GridBagLayout
+     * @param gbc Any pre-existing GridBagConstraints
+     * @param gridX The grid column
+     * @param gridY The grid row
+     * @param gridWidth The number of columns the cell uses
+     * @param gridHeight The number of rows the cell uses
+     * @param insets The external padding of the component
+     */
+    private void addWithConstraints(Component component, Container container, GridBagLayout layout, GridBagConstraints gbc,
+                                    int gridX, int gridY, int gridWidth, int gridHeight, Insets insets) {
+        gbc.gridx = gridX;
+        gbc.gridy = gridY;
+
+        gbc.gridwidth = gridWidth;
+        gbc.gridheight = gridHeight;
+
+        gbc.insets = insets;
+
+        layout.setConstraints(component, gbc);
+        container.add(component);
     }
 
     public TipsForm() {
@@ -354,10 +552,6 @@ public class TipsForm implements ActionListener {
         contentPane.setBorder(BorderFactory.createEmptyBorder(30, 30, 10, 30));
         contentPane.setLayout(layout);
         gbc = new GridBagConstraints();
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        gbc.gridwidth = 1;
-        gbc.gridheight = 1;
         gbc.weightx = 50;
         gbc.weighty = 100;
         gbc.insets = new Insets(5, 5, 5, 5);
@@ -373,8 +567,14 @@ public class TipsForm implements ActionListener {
         tipsSetButton.setActionCommand("SET_TIPS_AMOUNT");
         tipsSetButton.addActionListener(this);
 
-        // Show accepted table cell format
-        acceptedFormatLabel = new JLabel("An example of accepted format for monthly hours: 128h 00m");
+        // Add import buttons
+        importReplacingButton = new JButton("Import CSV (replace table)");
+        importReplacingButton.setActionCommand("IMPORT_FILE");
+        importReplacingButton.addActionListener(this);
+
+        importAddingButton = new JButton("Import CSV (add to existing)");
+        importAddingButton.setActionCommand("IMPORT_FILE_ADD");
+        importAddingButton.addActionListener(this);
 
         // Establish table
         makeTable();
@@ -390,25 +590,38 @@ public class TipsForm implements ActionListener {
         calculateDividedTips.setActionCommand("CALCULATE_TIPS");
         calculateDividedTips.addActionListener(this);
 
+        exportButton = new JButton("Export table");
+        exportButton.setActionCommand("EXPORT_TABLE");
+        exportButton.addActionListener(this);
+
         // test table content editing works correctly
-        testButton = new JButton("Test Button, Please Ignore");
+        testButton = new JButton("Fill table with example data");
         testButton.setActionCommand("TEST_BTN");
         testButton.addActionListener(this);
 
+        // Button to delete selected row from table
+        JButton deleteRowButton = new JButton("Delete selected row");
+        deleteRowButton.setActionCommand("DELETE_ROW");
+        deleteRowButton.addActionListener(this);
+
         // Add components to appropriate panels
-        JPanel topPane = new JPanel();
-        topPane.setLayout(new FlowLayout());
-        this.addWithConstraints(tipsSetButton, topPane, layout, gbc, 0, 0, 1, 1);
-        this.addWithConstraints(tipsLabel, topPane, layout, gbc, 1, 0, 3, 1);
+        GridBagLayout topLayout = new GridBagLayout();
+        GridBagConstraints topGbc = new GridBagConstraints();
+        JPanel topPane = new JPanel(topLayout);
+        this.addWithConstraints(tipsSetButton, topPane, topLayout, topGbc, 0, 0, 1, 1, new Insets(2,0,0,0));
+        this.addWithConstraints(tipsLabel, topPane, topLayout, topGbc, 1, 0, 2, 1, new Insets(2,5,0,0));
+        this.addWithConstraints(importReplacingButton, topPane, topLayout, topGbc, 0, 1, 3, 1, new Insets(5,0,0,0));
+        this.addWithConstraints(importAddingButton, topPane, topLayout, topGbc, 0, 2, 3, 1, new Insets(5,0,0,0));
 
         JPanel tablePane = new JPanel();
-        this.addWithConstraints(acceptedFormatLabel, tablePane, layout, gbc, 0, 1, 3, 1);
         this.addWithConstraints(scrollPane, tablePane, layout, gbc, 0, 0, 0, 0);
 
         JPanel bottomPane = new JPanel();
-        this.addWithConstraints(addEmployeeButton, bottomPane, layout, gbc, 3, 0, 2, 1);
-        this.addWithConstraints(calculateDividedTips, bottomPane, layout, gbc, 3, 0, 2, 1);
-        this.addWithConstraints(testButton, bottomPane, layout, gbc, 3, 0, 2, 1);
+        this.addWithConstraints(addEmployeeButton, bottomPane, layout, gbc, 0, 0, 2, 1);
+        this.addWithConstraints(calculateDividedTips, bottomPane, layout, gbc, 1, 0, 2, 1);
+        this.addWithConstraints(exportButton, bottomPane, layout, gbc, 1, 1, 2, 1);
+        this.addWithConstraints(testButton, bottomPane, layout, gbc, 2, 0, 2, 1);
+        this.addWithConstraints(deleteRowButton, bottomPane, layout, gbc, 2, 1, 2, 1);
 
         frame.add(topPane, BorderLayout.NORTH);
         this.addWithConstraints(tablePane, contentPane, layout, gbc, 0, 0, 5, 1);
@@ -422,14 +635,47 @@ public class TipsForm implements ActionListener {
         switch (command) {
             case "SET_TIPS_AMOUNT":
                 // Set 'tips' value to the input, as a Float
-                this.tips = Float.valueOf(JOptionPane.showInputDialog("Tips available:"));
-                tipsLabel.setText(String.format("Tips available: %s", this.tips));
+                Object inputValue = JOptionPane.showInputDialog("Do not include currency symbols! \n\nTips available:");
+                if (inputValue != null && inputValue.toString().matches("\\d+.?(\\d{1,2})*")) {
+                    tips = Float.valueOf(inputValue.toString());
+                    tipsLabel.setText(String.format("Tips available: %s", tips));
+                } else if (inputValue != null && !inputValue.toString().matches("\\d+.?(\\d{1,2})*")) {
+                    // Alert user of syntax error
+                    JOptionPane.showMessageDialog(
+                            null,
+                            "Tips was not filled out properly! \nUse standard currency format, but you don't need to include the currency type (such as £).",
+                            "Syntax error",
+                            JOptionPane.ERROR_MESSAGE);
+                } else {
+                    // Alert if tips input cancelled
+                    JOptionPane.showMessageDialog(
+                            null,
+                            "Tips field was not filled.",
+                            "Field error",
+                            JOptionPane.ERROR_MESSAGE);
+                }
                 break;
             case "ADD_NEW_EMPLOYEE":
                 newEmployee();
                 break;
             case "CALCULATE_TIPS":
                 openMonthSelectDialog();
+                break;
+            case "IMPORT_FILE":
+                importFile(true);
+                break;
+            case "IMPORT_FILE_ADD":
+                importFile(false);
+                break;
+            case "EXPORT_TABLE":
+                exportFile();
+                break;
+            case "DELETE_ROW":
+                int selectedRow = employeeTable.getSelectedRow();
+                int result = JOptionPane.showConfirmDialog(frame, "Are you sure you want to delete this row?");
+                if (result == JOptionPane.OK_OPTION) {
+                    employeeTableModel.removeRow(selectedRow);
+                }
                 break;
             case "TEST_BTN":
                 seedTestData();
